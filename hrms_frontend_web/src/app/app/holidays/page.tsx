@@ -1,41 +1,66 @@
 "use client";
 
-import React, { useMemo, useState } from "react";
+import React, { useEffect, useMemo, useState } from "react";
 import Card from "@/components/ui/Card";
 import Table from "@/components/ui/Table";
-import Field from "@/components/ui/Field";
 import EmptyState from "@/components/ui/EmptyState";
 import { useAuth } from "@/components/auth/AuthProvider";
+import { listHolidays, type HolidayOut } from "@/lib/api/hrms";
 
 type HolidayRow = {
   date: string;
   name: string;
-  region: string;
+  type: string;
 };
 
 export default function HolidaysPage() {
-  const { role } = useAuth();
-
-  const [rows, setRows] = useState<HolidayRow[]>([
-    { date: "2026-01-01", name: "New Year", region: "All" },
-    { date: "2026-01-26", name: "Republic Day", region: "IN" },
-  ]);
-
-  const [form, setForm] = useState<HolidayRow>({
-    date: "",
-    name: "",
-    region: "All",
-  });
+  const { role, accessToken } = useAuth();
+  const [error, setError] = useState<string | null>(null);
+  const [rows, setRows] = useState<HolidayRow[]>([]);
 
   const columns = useMemo(
     () => [
       { key: "date", label: "Date" },
       { key: "name", label: "Holiday" },
-      { key: "region", label: "Region" },
-      { key: "actions", label: "Actions" },
+      { key: "type", label: "Type" },
     ],
     []
   );
+
+  useEffect(() => {
+    if (!accessToken) return;
+
+    const today = new Date();
+    const start = new Date(today);
+    start.setDate(start.getDate() - 30);
+    const end = new Date(today);
+    end.setDate(end.getDate() + 180);
+    const fmt = (d: Date) => d.toISOString().slice(0, 10);
+
+    (async () => {
+      try {
+        setError(null);
+        const hols: HolidayOut[] = await listHolidays({
+          token: accessToken,
+          startDate: fmt(start),
+          endDate: fmt(end),
+        });
+        setRows(
+          hols.map((h) => ({
+            date: h.holiday_date,
+            name: h.name,
+            type: h.type,
+          }))
+        );
+      } catch (e) {
+        const msg =
+          typeof e === "object" && e && "message" in e
+            ? String((e as { message: unknown }).message)
+            : "Failed to load holidays.";
+        setError(msg);
+      }
+    })();
+  }, [accessToken]);
 
   if (role !== "admin" && role !== "hr") {
     return (
@@ -48,78 +73,18 @@ export default function HolidaysPage() {
 
   return (
     <div className="flex flex-col gap-4">
-      <Card title="Holidays" subtitle="Create and manage holiday calendar (demo).">
-        <div className="grid grid-cols-1 gap-4 lg:grid-cols-[1fr_360px]">
+      <Card title="Holidays" subtitle="Holiday calendar (API-backed: GET /holidays)">
+        {error ? (
           <div className="retro-card retro-card--flat">
-            <div className="retro-body flex flex-col gap-3">
-              <div className="font-extrabold">Holiday list</div>
-              <Table
-                columns={columns}
-                rows={rows.map((r) => ({
-                  ...r,
-                  actions: (
-                    <button
-                      className="retro-btn"
-                      onClick={() =>
-                        setRows((prev) =>
-                          prev.filter((x) => !(x.date === r.date && x.name === r.name))
-                        )
-                      }
-                    >
-                      Remove
-                    </button>
-                  ),
-                }))}
-              />
-            </div>
+            <div className="retro-body text-[var(--danger)] font-bold">{error}</div>
           </div>
+        ) : null}
 
-          <div className="retro-card retro-card--flat">
-            <div className="retro-body flex flex-col gap-3">
-              <div className="font-extrabold">Add holiday</div>
+        <Table columns={columns} rows={rows} />
 
-              <Field label="Date">
-                <input
-                  className="retro-input"
-                  type="date"
-                  value={form.date}
-                  onChange={(e) => setForm((s) => ({ ...s, date: e.target.value }))}
-                />
-              </Field>
-
-              <Field label="Name">
-                <input
-                  className="retro-input"
-                  value={form.name}
-                  onChange={(e) => setForm((s) => ({ ...s, name: e.target.value }))}
-                />
-              </Field>
-
-              <Field label="Region">
-                <input
-                  className="retro-input"
-                  value={form.region}
-                  onChange={(e) => setForm((s) => ({ ...s, region: e.target.value }))}
-                />
-              </Field>
-
-              <button
-                className="retro-btn retro-btn-primary"
-                onClick={() => {
-                  setRows((prev) => [
-                    { ...form, date: form.date || "2026-02-01", name: form.name || "New Holiday" },
-                    ...prev,
-                  ]);
-                  setForm({ date: "", name: "", region: "All" });
-                }}
-              >
-                Create
-              </button>
-
-              <small>Connect to backend /holidays endpoints once available.</small>
-            </div>
-          </div>
-        </div>
+        <small className="block pt-3">
+          Note: Backend currently exposes read-only holidays list endpoint (no create/delete).
+        </small>
       </Card>
     </div>
   );

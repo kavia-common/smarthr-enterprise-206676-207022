@@ -6,14 +6,20 @@ import type { Role } from "@/lib/routes";
 
 type AuthState = {
   isAuthenticated: boolean;
-  token: string | null;
+  accessToken: string | null;
+  refreshToken: string | null;
   role: Role | null;
   email?: string;
 };
 
 type AuthContextValue = AuthState & {
   // PUBLIC_INTERFACE
-  signIn: (payload: { token: string; role: Role; email?: string }) => void;
+  signIn: (payload: {
+    accessToken: string;
+    refreshToken: string;
+    role: Role;
+    email?: string;
+  }) => void;
   // PUBLIC_INTERFACE
   signOut: () => void;
 };
@@ -31,19 +37,21 @@ export function useAuth(): AuthContextValue {
 export function AuthProvider({ children }: { children: React.ReactNode }) {
   const initial = typeof window === "undefined" ? null : getStoredAuth();
   const [state, setState] = useState<AuthState>(() => ({
-    isAuthenticated: Boolean(initial?.token),
-    token: initial?.token ?? null,
+    isAuthenticated: Boolean(initial?.accessToken),
+    accessToken: initial?.accessToken ?? null,
+    refreshToken: initial?.refreshToken ?? null,
     role: (initial?.role as Role) ?? null,
   }));
 
   const value = useMemo<AuthContextValue>(() => {
     return {
       ...state,
-      signIn: ({ token, role, email }) => {
-        setStoredAuth(token, role);
+      signIn: ({ accessToken, refreshToken, role, email }) => {
+        setStoredAuth({ accessToken, refreshToken, role });
         setState({
           isAuthenticated: true,
-          token,
+          accessToken,
+          refreshToken,
           role,
           email,
         });
@@ -52,7 +60,8 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         clearStoredAuth();
         setState({
           isAuthenticated: false,
-          token: null,
+          accessToken: null,
+          refreshToken: null,
           role: null,
         });
       },

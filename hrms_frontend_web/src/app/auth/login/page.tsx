@@ -8,40 +8,66 @@ import { zodResolver } from "@hookform/resolvers/zod";
 import Card from "@/components/ui/Card";
 import Field from "@/components/ui/Field";
 import { useAuth } from "@/components/auth/AuthProvider";
+import { login, me } from "@/lib/api/auth";
 import type { Role } from "@/lib/routes";
 
 const schema = z.object({
+  orgSlug: z.string().min(1, "Org slug is required"),
   email: z.string().email(),
   password: z.string().min(4, "Password must be at least 4 characters"),
-  role: z.enum(["admin", "hr", "manager", "employee"]),
 });
 
 type FormValues = z.infer<typeof schema>;
+
+function roleFromBackendRoles(roles: string[]): Role {
+  const normalized = roles.map((r) => r.toLowerCase());
+  if (normalized.includes("admin")) return "admin";
+  if (normalized.includes("hr")) return "hr";
+  if (normalized.includes("manager")) return "manager";
+  return "employee";
+}
 
 export default function LoginPage() {
   const router = useRouter();
   const auth = useAuth();
   const [error, setError] = useState<string | null>(null);
+  const [busy, setBusy] = useState(false);
 
   const form = useForm<FormValues>({
     resolver: zodResolver(schema),
-    defaultValues: { email: "", password: "", role: "employee" },
+    defaultValues: { orgSlug: "demo", email: "admin@demo.local", password: "admin123" },
   });
 
   async function onSubmit(values: FormValues) {
     setError(null);
+    setBusy(true);
 
     try {
-      /**
-       * Backend OpenAPI currently contains only / health check.
-       * For now we simulate login by generating a token-like string and storing role.
-       * Once backend auth endpoints exist, replace this block with apiFetch().
-       */
-      const fakeToken = `demo.${btoa(values.email)}.${Date.now()}`;
-      auth.signIn({ token: fakeToken, role: values.role as Role, email: values.email });
+      const tokens = await login({
+        orgSlug: values.orgSlug,
+        email: values.email,
+        password: values.password,
+      });
+
+      const meResp = await me(tokens.access_token);
+      const role = roleFromBackendRoles(meResp.roles);
+
+      auth.signIn({
+        accessToken: tokens.access_token,
+        refreshToken: tokens.refresh_token,
+        role,
+        email: values.email,
+      });
+
       router.push("/app");
-    } catch {
-      setError("Login failed. Please try again.");
+    } catch (e) {
+      const msg =
+        typeof e === "object" && e && "message" in e
+          ? String((e as { message: unknown }).message)
+          : "Login failed. Please try again.";
+      setError(msg);
+    } finally {
+      setBusy(false);
     }
   }
 
@@ -50,31 +76,19 @@ export default function LoginPage() {
       <div className="container-shell">
         <Card
           title="Sign in"
-          subtitle="Use your credentials. Role controls what you can see in the app."
+          subtitle="Uses the real backend /auth/login endpoint. Default demo: admin@demo.local / admin123 (org: demo)."
         >
           <form className="flex flex-col gap-4" onSubmit={form.handleSubmit(onSubmit)}>
-            <Field
-              label="Email"
-              error={form.formState.errors.email?.message}
-            >
+            <Field label="Org slug" error={form.formState.errors.orgSlug?.message}>
+              <input className="retro-input" {...form.register("orgSlug")} />
+            </Field>
+
+            <Field label="Email" error={form.formState.errors.email?.message}>
               <input className="retro-input" type="email" {...form.register("email")} />
             </Field>
 
-            <Field
-              label="Password"
-              hint="(Demo accepts any password ≥ 4 chars)"
-              error={form.formState.errors.password?.message}
-            >
+            <Field label="Password" error={form.formState.errors.password?.message}>
               <input className="retro-input" type="password" {...form.register("password")} />
-            </Field>
-
-            <Field label="Role" hint="Demo role switch" error={form.formState.errors.role?.message}>
-              <select className="retro-input" {...form.register("role")}>
-                <option value="employee">Employee</option>
-                <option value="manager">Manager</option>
-                <option value="hr">HR</option>
-                <option value="admin">Admin</option>
-              </select>
             </Field>
 
             {error ? (
@@ -84,17 +98,17 @@ export default function LoginPage() {
             ) : null}
 
             <div className="flex flex-wrap gap-2">
-              <button className="retro-btn retro-btn-primary" type="submit">
-                Sign in
+              <button className="retro-btn retro-btn-primary" type="submit" disabled={busy}>
+                {busy ? "Signing in..." : "Sign in"}
               </button>
-              <button
-                className="retro-btn"
-                type="button"
-                onClick={() => router.push("/auth/register")}
-              >
+              <button className="retro-btn" type="button" onClick={() => router.push("/auth/register")}>
                 Create account
               </button>
             </div>
+
+            <small>
+              Configure backend at <code>NEXT_PUBLIC_API_BASE_URL</code> (see <code>.env.example</code>).
+            </small>
           </form>
         </Card>
       </div>

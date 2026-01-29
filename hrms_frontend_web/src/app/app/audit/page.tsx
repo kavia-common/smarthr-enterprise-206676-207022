@@ -1,44 +1,58 @@
 "use client";
 
-import React, { useMemo, useState } from "react";
+import React, { useEffect, useMemo, useState } from "react";
 import Card from "@/components/ui/Card";
 import Table from "@/components/ui/Table";
 import EmptyState from "@/components/ui/EmptyState";
 import { useAuth } from "@/components/auth/AuthProvider";
+import { listAuditLogs, type AuditLogOut } from "@/lib/api/hrms";
 
-type AuditRow = {
+type Row = {
   at: string;
-  actor: string;
   action: string;
-  target: string;
+  entity: string;
+  actorUser: string;
 };
 
 export default function AuditPage() {
-  const { role } = useAuth();
-  const [rows] = useState<AuditRow[]>([
-    {
-      at: new Date().toISOString(),
-      actor: "admin@smarthr.ai",
-      action: "LOGIN",
-      target: "auth",
-    },
-    {
-      at: new Date(Date.now() - 3600_000).toISOString(),
-      actor: "hr@smarthr.ai",
-      action: "CREATE_HOLIDAY",
-      target: "2026-01-26",
-    },
-  ]);
+  const { role, accessToken } = useAuth();
+  const [error, setError] = useState<string | null>(null);
+  const [rows, setRows] = useState<Row[]>([]);
 
   const columns = useMemo(
     () => [
       { key: "at", label: "Timestamp" },
-      { key: "actor", label: "Actor" },
+      { key: "actorUser", label: "Actor" },
       { key: "action", label: "Action" },
-      { key: "target", label: "Target" },
+      { key: "entity", label: "Entity" },
     ],
     []
   );
+
+  useEffect(() => {
+    if (!accessToken) return;
+
+    (async () => {
+      try {
+        setError(null);
+        const logs: AuditLogOut[] = await listAuditLogs({ token: accessToken, limit: 200 });
+        setRows(
+          logs.map((l) => ({
+            at: new Date(l.created_at).toLocaleString(),
+            action: l.action,
+            entity: `${l.entity_type}${l.entity_id ? `:${l.entity_id}` : ""}`,
+            actorUser: l.actor_user_id ?? "—",
+          }))
+        );
+      } catch (e) {
+        const msg =
+          typeof e === "object" && e && "message" in e
+            ? String((e as { message: unknown }).message)
+            : "Failed to load audit logs.";
+        setError(msg);
+      }
+    })();
+  }, [accessToken]);
 
   if (role !== "admin") {
     return (
@@ -51,7 +65,12 @@ export default function AuditPage() {
 
   return (
     <div className="flex flex-col gap-4">
-      <Card title="Audit Logs" subtitle="Security + activity trail (demo).">
+      <Card title="Audit Logs" subtitle="Security + activity trail (API-backed: GET /audit/logs)">
+        {error ? (
+          <div className="retro-card retro-card--flat">
+            <div className="retro-body text-[var(--danger)] font-bold">{error}</div>
+          </div>
+        ) : null}
         <Table columns={columns} rows={rows} />
       </Card>
     </div>

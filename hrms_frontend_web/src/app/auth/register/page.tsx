@@ -43,7 +43,10 @@ export default function RegisterPage() {
   return (
     <main className="min-h-screen">
       <div className="container-shell">
-        <Card title="Create account" subtitle="Demo screen — backend auth wiring will be added when available.">
+        <Card
+          title="Create account"
+          subtitle="Not implemented in backend yet (only /auth/login, /auth/refresh, /auth/me)."
+        >
           <form className="flex flex-col gap-4" onSubmit={form.handleSubmit(onSubmit)}>
             <Field label="Full name" error={form.formState.errors.name?.message}>
               <input className="retro-input" {...form.register("name")} />
